@@ -1,0 +1,299 @@
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.net.URL;
+
+/**
+ * Graphical UI for the High School Life Simulator.
+ * Activity image changes by choice; pastel purple palette.
+ */
+public class HighSchoolGameGUI extends JFrame {
+
+    private CardLayout cards;
+    private JPanel mainPanel;
+    private GamePanel gamePanel;
+    private Main.Student player;
+    private int week = 1;
+    private static final int TOTAL_WEEKS = 24;
+    private double difficultyMultiplier = 1.0;
+
+    /** Stock image URLs per activity: Study, Social, Activity, Research, Character, Recreation, Extra Test, Rest, Heal */
+    private static final String[] ACTIVITY_IMAGE_URLS = {
+        "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=200&h=200&fit=crop",
+        "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=200&h=200&fit=crop",
+        "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=200&h=200&fit=crop",
+        "https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=200&h=200&fit=crop",
+        "https://images.unsplash.com/photo-1506126613408-eca67ce52473?w=200&h=200&fit=crop",
+        "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=200&h=200&fit=crop",
+        "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=200&h=200&fit=crop",
+        "https://images.unsplash.com/photo-1541783245831-57d6fb0926d3?w=200&h=200&fit=crop",
+        "https://images.unsplash.com/photo-1505751172870-45f6c2e4e765?w=200&h=200&fit=crop"
+    };
+
+    public HighSchoolGameGUI() {
+        setTitle("Woah, This is a Game??");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(700, 600);
+        setLocationRelativeTo(null);
+        cards = new CardLayout();
+        mainPanel = new JPanel(cards);
+
+        // Start screen
+        JPanel startPanel = new StartPanel();
+        mainPanel.add(startPanel, "start");
+
+        // Game screen (will add player and week when game starts)
+        gamePanel = new GamePanel(null);
+        mainPanel.add(gamePanel, "game");
+
+        add(mainPanel);
+    }
+
+    private void startGame() {
+        String name = JOptionPane.showInputDialog(this, "Enter your name:", "Student Name", JOptionPane.QUESTION_MESSAGE);
+        if (name == null || name.trim().isEmpty()) name = "Student";
+
+        Main.Major major = chooseMajorDialog();
+        if (major == null) return;
+
+        Main.guiInputProvider = prompt -> {
+            String result = JOptionPane.showInputDialog(HighSchoolGameGUI.this, prompt, "Choice", JOptionPane.QUESTION_MESSAGE);
+            return result != null ? result : "1";
+        };
+        player = new Main.Student(name.trim(), major);
+        player.effStudy = 1.05;
+        player.effSocial = 1.05;
+        player.effActivity = 1.05;
+        player.effResearch = 1.05;
+        player.effCharacter = 1.05;
+
+        String diffStr = JOptionPane.showInputDialog(this, "Difficulty (1=Easy, 2=Normal, 3=Hard):", "2");
+        try {
+            int d = Integer.parseInt(diffStr != null ? diffStr : "2");
+            if (d >= 1 && d <= 3) difficultyMultiplier = 1 + (d - 1) * 0.1;
+        } catch (Exception e) { }
+
+        week = 1;
+        gamePanel.setPlayer(player);
+        gamePanel.setWeek(week);
+        gamePanel.setActivityImage(0);
+        gamePanel.buildChoiceButtons(this::onActivityChosen);
+        cards.show(mainPanel, "game");
+        gamePanel.repaint();
+    }
+
+    private void onActivityChosen(int activityIndex) {
+        if (player == null || week > TOTAL_WEEKS) return;
+        Main.Activity act = Main.Activity.values()[activityIndex];
+        boolean requiredTest = (week == 12 || week == 24);
+        player.train(act, requiredTest, difficultyMultiplier);
+        if (requiredTest) {
+            boolean passed = player.passCheck(difficultyMultiplier);
+            if (passed) {
+                player.study += 5; player.social += 5; player.activity += 5;
+                player.research += 5; player.character += 5;
+                player.mood = Math.min(100, player.mood + 5);
+                JOptionPane.showMessageDialog(this, "You passed the " + (week == 12 ? "Midterm!" : "Final!") + " +5 all stats, +5 mood.");
+            } else {
+                JOptionPane.showMessageDialog(this, "You failed the " + (week == 12 ? "Midterm." : "Final."));
+            }
+        }
+        week++;
+        gamePanel.setWeek(week);
+        gamePanel.setActivityImage(activityIndex);
+        gamePanel.repaint();
+        if (week <= TOTAL_WEEKS) {
+            gamePanel.buildChoiceButtons(this::onActivityChosen);
+        } else {
+            endGame();
+        }
+    }
+
+    private Main.Major chooseMajorDialog() {
+        Main.Major[] majors = Main.Major.values();
+        String[] names = new String[majors.length];
+        for (int i = 0; i < majors.length; i++) names[i] = (i + 1) + ") " + majors[i].name();
+        String choice = (String) JOptionPane.showInputDialog(this, "Choose your major:", "Major",
+            JOptionPane.QUESTION_MESSAGE, null, names, names[0]);
+        if (choice == null) return null;
+        int paren = choice.indexOf(')');
+        String num = paren > 0 ? choice.substring(0, paren).trim() : choice.trim();
+        int idx = Integer.parseInt(num) - 1;
+        if (idx < 0 || idx >= majors.length) idx = 0;
+        return majors[idx];
+    }
+
+    private void endGame() {
+        if (player != null) {
+            JOptionPane.showMessageDialog(this,
+                "Semester Complete!\nStudy: " + player.study + " Social: " + player.social +
+                " Activity: " + player.activity + " Research: " + player.research + " Character: " + player.character +
+                "\nMood: " + player.moodLevel() + " Fatigue: " + player.fatigue);
+        }
+    }
+
+    // ----- Start screen panel (pastel purple) -----
+    class StartPanel extends JPanel implements MouseListener {
+        StartPanel() {
+            setBackground(new Color(237, 232, 245));
+            setLayout(new BorderLayout());
+            JLabel title = new JLabel("<html><center>Woah, This is a Game??</center></html>", SwingConstants.CENTER);
+            title.setFont(new Font("SansSerif", Font.BOLD, 28));
+            title.setForeground(new Color(82, 65, 115));
+            add(title, BorderLayout.CENTER);
+            JLabel hint = new JLabel("Click anywhere to start", SwingConstants.CENTER);
+            hint.setFont(new Font("SansSerif", Font.PLAIN, 14));
+            hint.setForeground(new Color(124, 104, 156));
+            add(hint, BorderLayout.SOUTH);
+            addMouseListener(this);
+            title.addMouseListener(this);
+            hint.addMouseListener(this);
+        }
+        @Override
+        public void mouseClicked(MouseEvent e) { startGame(); }
+        @Override
+        public void mousePressed(MouseEvent e) {}
+        @Override
+        public void mouseReleased(MouseEvent e) {}
+        @Override
+        public void mouseEntered(MouseEvent e) {}
+        @Override
+        public void mouseExited(MouseEvent e) {}
+    }
+
+    // ----- Game panel: stats bar, fatigue bar, choice area, activity image (pastel purple) -----
+    class GamePanel extends JPanel {
+        private Main.Student p;
+        private JPanel choiceArea;
+        private JLabel imageLabel;
+        private JLabel weekLabel;
+
+        GamePanel(Main.Student player) {
+            p = player;
+            setBackground(new Color(245, 240, 250));
+            setLayout(new BorderLayout(0, 12));
+
+            JPanel topPanel = new JPanel(new BorderLayout(0, 8));
+            topPanel.setBackground(new Color(245, 240, 250));
+            topPanel.setBorder(BorderFactory.createEmptyBorder(12, 12, 8, 12));
+            JPanel barPanel = new JPanel() {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
+                    if (p == null) return;
+                    Graphics2D g2 = (Graphics2D) g;
+                    int w = getWidth();
+                    int barY = 4;
+                    int barH = 20;
+                    int barW = w - 72;
+                    int barX = 8;
+                    g2.setColor(new Color(214, 207, 224));
+                    g2.fillRoundRect(barX, barY, barW, barH, 6, 6);
+                    double fatiguePct = Math.min(100, p.fatigue) / 100.0;
+                    Color fc = fatiguePct > 0.7 ? new Color(180, 130, 165) : fatiguePct > 0.4 ? new Color(198, 168, 200) : new Color(168, 155, 195);
+                    g2.setColor(fc);
+                    g2.fillRoundRect(barX, barY, (int) (barW * fatiguePct), barH, 6, 6);
+                    g2.setColor(new Color(107, 90, 130));
+                    g2.drawRoundRect(barX, barY, barW, barH, 6, 6);
+                    g2.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                    g2.drawString("Fatigue: " + p.fatigue, barX + barW + 6, barY + barH - 5);
+                    int boxY = barY + barH + 12;
+                    int boxH = 40;
+                    String[] labels = { "Study", "Social", "Activity", "Research", "Character" };
+                    int[] values = { p.study, p.social, p.activity, p.research, p.character };
+                    int boxW = (w - 48) / 5;
+                    int gap = 6;
+                    for (int i = 0; i < 5; i++) {
+                        int x = 24 + i * (boxW + gap);
+                        g2.setColor(new Color(252, 250, 254));
+                        g2.fillRoundRect(x, boxY, boxW, boxH, 8, 8);
+                        g2.setColor(new Color(139, 120, 168));
+                        g2.drawRoundRect(x, boxY, boxW, boxH, 8, 8);
+                        g2.setFont(new Font("SansSerif", Font.BOLD, 10));
+                        g2.setColor(new Color(82, 65, 115));
+                        g2.drawString(labels[i], x + 4, boxY + 14);
+                        g2.setFont(new Font("SansSerif", Font.PLAIN, 13));
+                        g2.drawString(String.valueOf(values[i]), x + 4, boxY + 30);
+                    }
+                }
+            };
+            barPanel.setPreferredSize(new Dimension(700, 82));
+            barPanel.setBackground(new Color(245, 240, 250));
+            topPanel.add(barPanel, BorderLayout.NORTH);
+
+            choiceArea = new JPanel(new GridLayout(0, 3, 8, 8));
+            choiceArea.setBackground(new Color(245, 240, 250));
+            choiceArea.setBorder(BorderFactory.createTitledBorder("Week — Choose your activity"));
+            topPanel.add(choiceArea, BorderLayout.CENTER);
+            add(topPanel, BorderLayout.NORTH);
+
+            imageLabel = new JLabel("", SwingConstants.CENTER);
+            imageLabel.setPreferredSize(new Dimension(200, 200));
+            imageLabel.setBackground(new Color(237, 232, 245));
+            imageLabel.setOpaque(true);
+            JPanel imagePanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+            imagePanel.setBackground(new Color(245, 240, 250));
+            imagePanel.add(imageLabel);
+            add(imagePanel, BorderLayout.CENTER);
+
+            weekLabel = new JLabel("Week 1 / " + TOTAL_WEEKS, SwingConstants.CENTER);
+            weekLabel.setFont(new Font("SansSerif", Font.PLAIN, 14));
+            weekLabel.setForeground(new Color(107, 90, 130));
+            add(weekLabel, BorderLayout.SOUTH);
+        }
+
+        void setPlayer(Main.Student player) { p = player; }
+
+        void setWeek(int w) {
+            weekLabel.setText("Week " + w + " / " + TOTAL_WEEKS);
+            choiceArea.setBorder(BorderFactory.createTitledBorder("Week " + w + " — Choose your activity"));
+        }
+
+        void setActivityImage(int activityIndex) {
+            if (activityIndex < 0 || activityIndex >= ACTIVITY_IMAGE_URLS.length) activityIndex = 0;
+            final int idx = activityIndex;
+            new Thread(() -> {
+                try {
+                    URL url = new URL(ACTIVITY_IMAGE_URLS[idx]);
+                    ImageIcon icon = new ImageIcon(url);
+                    SwingUtilities.invokeLater(() -> {
+                        imageLabel.setIcon(icon);
+                    });
+                } catch (Exception e) {
+                    SwingUtilities.invokeLater(() -> imageLabel.setIcon(null));
+                }
+            }).start();
+        }
+
+        void buildChoiceButtons(java.util.function.IntConsumer onChoice) {
+            choiceArea.removeAll();
+            String[] options = {
+                "Study", "Social", "Activity", "Research", "Character",
+                "Recreation", "Extra Test", "Rest", "Heal"
+            };
+            Color btnBg = new Color(232, 225, 242);
+            Color btnFg = new Color(82, 65, 115);
+            Color border = new Color(168, 155, 195);
+            for (int i = 0; i < options.length; i++) {
+                final int idx = i;
+                JButton b = new JButton(options[i]);
+                b.setBackground(btnBg);
+                b.setForeground(btnFg);
+                b.setBorder(BorderFactory.createLineBorder(border));
+                b.addActionListener(e -> onChoice.accept(idx));
+                choiceArea.add(b);
+            }
+            choiceArea.revalidate();
+            choiceArea.repaint();
+        }
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            HighSchoolGameGUI gui = new HighSchoolGameGUI();
+            gui.setVisible(true);
+        });
+    }
+}
+
