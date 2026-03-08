@@ -1,0 +1,519 @@
+
+import java.util.*;
+
+public class Main {
+
+    static Scanner sc = new Scanner(System.in);
+    static Random rand = new Random();
+
+    enum Activity { STUDY, SOCIAL, ACTIVITY, RESEARCH, CHARACTER, RECREATION, EXTRA_TEST, REST, HEAL }
+    enum Major { ENGINEERING, BUSINESS, ENGLISH, ATHLETICS, MEDICAL, LAW, SOCIOLOGY, PSYCHOLOGY, EDUCATION }
+
+    enum Fstat { NONE, EXHAUSTED, MENTALLY_OVERWORKED, ON_THE_BRINK, WELL_RESTED, RIGHT_ON_TOP, SHINING_BRIGHT }
+    enum Gstat { NONE, SLACKER, SICKLY }
+    enum Rstat { NONE, DREAD, FEAR }
+
+    static class Student {
+
+    String name;
+    Major major;
+
+    int study=50, social=50, activity=50, research=50, character=50;
+    int fatigue=0;
+    int mood=70; // 0-100
+    int skillPoints=0;
+    int motivation=70;
+
+    double effStudy=1.0, effSocial=1.0, effActivity=1.0, effResearch=1.0, effCharacter=1.0;
+
+    Fstat fstat=Fstat.NONE;
+    Gstat gstat=Gstat.NONE;
+    Rstat rstat=Rstat.NONE;
+
+    int turnCounter=0;
+
+    Student(String n, Major m) { name=n; major=m; }
+
+    String moodLevel() {
+        if(mood>=80) return "Great";
+        if(mood>=60) return "Good";
+        if(mood>=40) return "Normal";
+        if(mood>=20) return "Bad";
+        return "Awful";
+    }
+
+    double moodFactor() {
+        switch(moodLevel()) {
+            case "Great": return 1.2;
+            case "Good": return 1.1;
+            case "Normal": return 1.0;
+            case "Bad": return 0.9;
+            case "Awful": return 0.8;
+        }
+        return 1.0;
+    }
+
+    double motivationFactor() {
+        switch(moodLevel()) {
+            case "Great": return 1.0;
+            case "Good": return 0.98;
+            case "Normal": return 0.95;
+            case "Bad": return 0.9;
+            case "Awful": return 0.85;
+        }
+        return 1.0;
+    }
+
+    int gain(int min,int max,double m,double factor){
+        int g = min + rand.nextInt(max-min+1);
+        return (int)(g*m*factor);
+    }
+
+    void passiveStatusEffects(){
+        turnCounter++;
+        if(fstat == Fstat.MENTALLY_OVERWORKED && turnCounter%2==0) mood=Math.max(0,mood-5);
+        if(fstat == Fstat.ON_THE_BRINK && turnCounter%2==0) mood=Math.max(0,mood-5);
+        if(fstat == Fstat.SHINING_BRIGHT && turnCounter%2==0) mood=Math.min(100,mood+5);
+        if(gstat == Gstat.SLACKER && rand.nextDouble()<0.4) {
+            System.out.println("Slacker: skipped this training!");
+            fatigue=Math.max(0,fatigue-15);
+        }
+    }
+
+    void train(Activity act, boolean isRequiredTest, double difficultyMultiplier){
+        // Random event triggers
+        triggerRandomEvent();
+
+        //Passive status effects
+        passiveStatusEffects();
+
+        double mult = 0.8 + motivation/100.0;
+        mult *= moodFactor() * motivationFactor();
+        boolean crit = rand.nextDouble() < 0.12;
+        double factor = crit ? 1.7 : 1.0;
+
+        // High fatigue failure
+        double failChance = 0;
+        if(fatigue>50){
+            double fatigueLevel = fatigue/100.0;
+            double mod = (motivation<50)?0.05:0;
+            failChance = fatigueLevel*0.5 + mod;
+            if(rand.nextDouble() < failChance){
+                handleFailure(act);
+                return;
+            }
+        }
+
+        Map<String,Integer> gains = new HashMap<>();
+
+        switch(act){
+            case STUDY:
+                int gStudy = (int)(gain(5,10,mult,factor)*effStudy);
+                int gResearch = (int)(gain(1,4,mult,factor)*effResearch);
+                study += gStudy; research += gResearch; skillPoints +=5;
+                gains.put("study",gStudy); gains.put("research",gResearch);
+                research += (int)(gStudy*0.25);
+                gains.put("research", gains.get("research")+(int)(gStudy*0.25));
+                fatigueCalc(gains);
+                mood=Math.max(0,mood-2);
+                break;
+            case SOCIAL:
+                int gSocial = (int)(gain(5,10,mult,factor)*effSocial);
+                int gChar = (int)(gain(1,3,mult,factor)*effCharacter);
+                int gActivity = (int)(gain(1,3,mult,factor)*effActivity);
+                social += gSocial; character += gChar; activity += gActivity; skillPoints +=5;
+                gains.put("social",gSocial); gains.put("character",gChar); gains.put("activity",gActivity);
+                character += (int)(gSocial*0.33);
+                activity += (int)(gSocial*0.2);
+                fatigueCalc(gains);
+                mood=Math.max(0,mood-2);
+                break;
+            case ACTIVITY:
+                int gActivity2 = (int)(gain(5,10,mult,factor)*effActivity);
+                int gSocial2 = (int)(gain(1,3,mult,factor)*effSocial);
+                activity += gActivity2; social += gSocial2; skillPoints +=10;
+                gains.put("activity",gActivity2); gains.put("social",gSocial2);
+                social += (int)(gActivity2*0.33);
+                fatigueCalc(gains);
+                mood=Math.max(0,mood-2);
+                break;
+            case RESEARCH:
+                int gResearch2 = (int)(gain(5,10,mult,factor)*effResearch);
+                int gStudy2 = (int)(gain(1,3,mult,factor)*effStudy);
+                int gActivity3 = (int)(gain(1,3,mult,factor)*effActivity);
+                research += gResearch2; study += gStudy2; activity += gActivity3; skillPoints +=5;
+                gains.put("research",gResearch2); gains.put("study",gStudy2); gains.put("activity",gActivity3);
+                study += (int)(gResearch2*0.25);
+                activity += (int)(gResearch2*0.25);
+                fatigueCalc(gains);
+                mood=Math.max(0,mood-2);
+                break;
+            case CHARACTER:
+                int gChar2 = (int)(gain(5,10,mult,factor)*effCharacter);
+                int gSocial3 = (int)(gain(1,2,mult,factor)*effSocial);
+                character += gChar2; social += gSocial3; skillPoints +=10;
+                gains.put("character",gChar2); gains.put("social",gSocial3);
+                social += (int)(gChar2*0.1666);
+                fatigueCalc(gains);
+                mood=Math.max(0,mood-2);
+                fatigue=Math.max(0,fatigue-5); // Character recovers fatigue
+                break;
+            case RECREATION: restSystem(); break;
+            case EXTRA_TEST: extraTest(act, isRequiredTest, mult, factor); break;
+            case REST: restSystem(); break;
+            case HEAL: healSystem(); break;
+        }
+
+        capStats();
+
+        triggerTrainingEvent(act);
+    }
+
+    void fatigueCalc(Map<String,Integer> gains){
+        int totalFatigue = 0;
+        for(String stat: gains.keySet()){
+            int gain = gains.get(stat);
+            if(stat.equals("character")){
+                totalFatigue -= (int)(gain/2.5); // Character reduces fatigue
+            } else {
+                totalFatigue += (int)(gain/3.5);
+            }
+        }
+        fatigue += totalFatigue;
+        if(fatigue<0) fatigue=0;
+    }
+
+    void handleFailure(Activity act){
+        double fPercent = fatigue>75 ? 0.4 : 0.7;
+        double sPercent = fatigue>75 ? 0.5 : 0.25;
+        double tPercent = fatigue>75 ? 0.1 : 0.05;
+        double roll = rand.nextDouble();
+
+        if(roll<fPercent){
+            cutPrimaryStat(act,10);
+            mood=Math.max(0,mood-5);
+            fstat=Fstat.EXHAUSTED;
+            System.out.println("Training failed! Stat cut and mood down.");
+        } else if(roll<fPercent+sPercent){
+            cutPrimaryStat(act,10);
+            mood=Math.max(0,mood-5);
+            fatigue=Math.max(0,fatigue-10);
+            fstat=Fstat.EXHAUSTED;
+            System.out.println("Training failed! Stat cut, mood down, gained status 'exhausted'.");
+        } else{
+            cutAllStats(10);
+            mood=Math.max(0,mood-15);
+            fstat=Fstat.MENTALLY_OVERWORKED;
+            System.out.println("Training failed catastrophically! All stats cut, mood down, status 'mentally overworked'.");
+        }
+    }
+
+    void cutPrimaryStat(Activity act,int amt){
+        switch(act){
+            case STUDY: study=Math.max(0,study-amt); break;
+            case SOCIAL: social=Math.max(0,social-amt); break;
+            case ACTIVITY: activity=Math.max(0,activity-amt); break;
+            case RESEARCH: research=Math.max(0,research-amt); break;
+            case CHARACTER: character=Math.max(0,character-amt); break;
+        }
+    }
+
+    void cutAllStats(int amt){
+        study=Math.max(0,study-amt);
+        social=Math.max(0,social-amt);
+        activity=Math.max(0,activity-amt);
+        research=Math.max(0,research-amt);
+        character=Math.max(0,character-amt);
+    }
+
+    void restSystem(){
+        double roll = rand.nextDouble();
+        if(roll<0.65){
+            fatigue = Math.max(0,fatigue-50);
+            fstat=Fstat.WELL_RESTED;
+            System.out.println("Rest: recovered 50 fatigue!");
+        } else if(roll<0.85){
+            fatigue = Math.max(0,fatigue-70);
+            fstat=Fstat.WELL_RESTED;
+            gstat=Gstat.NONE;
+            rstat=Rstat.NONE;
+            System.out.println("Rest: recovered 70 fatigue and cleared statuses!");
+        } else{
+            fatigue = Math.max(0,fatigue-30);
+            if(rand.nextDouble()<0.3){
+                gstat=Gstat.SLACKER;
+                System.out.println("Rest: recovered 30 fatigue, but gained 'slacker' status.");
+            } else{
+                System.out.println("Rest: recovered 30 fatigue.");
+            }
+        }
+    }
+
+    void triggerRandomEvent() {
+        if(rand.nextDouble() > 0.5) return; // 50% chance nothing happens
+
+        List<String> possibleEvents = new ArrayList<>();
+        possibleEvents.add("Randomly Nice Day");
+        possibleEvents.add("Randomly Bad Day");
+        possibleEvents.add("Should I sleep in?");
+        possibleEvents.add("Chance Encounter");
+        possibleEvents.add("Stroke of Determination!");
+        possibleEvents.add("A Bit Lost...");
+        possibleEvents.add("Achoo!");
+
+        // Pick a random event
+        String event = possibleEvents.get(rand.nextInt(possibleEvents.size()));
+        System.out.println("\n--- Random Event: " + event + " ---");
+
+        switch(event) {
+            case "Randomly Nice Day":
+                mood = Math.min(100, mood + 10);
+                System.out.println("Mood increased!");
+                break;
+            case "Randomly Bad Day":
+                mood = Math.max(0, mood - 10);
+                System.out.println("Mood decreased!");
+                break;
+            case "Should I sleep in?":
+                handleSleepInEvent();
+                break;
+            case "Chance Encounter":
+                Activity randomAct = Activity.values()[rand.nextInt(5)]; // random stat-related training
+                System.out.println("Chance Encounter! Gained stats in " + randomAct);
+                train(randomAct, false, 1.0); // simulate gain for that stat only
+                break;
+            case "Stroke of Determination!":
+                if(fstat == Fstat.NONE) fstat = Fstat.WELL_RESTED;
+                else if(fstat == Fstat.WELL_RESTED) fstat = Fstat.RIGHT_ON_TOP;
+                System.out.println("Positive Fstat increased!");
+                break;
+            case "A Bit Lost...":
+                if(fstat == Fstat.RIGHT_ON_TOP) fstat = Fstat.WELL_RESTED;
+                else if(fstat == Fstat.WELL_RESTED) fstat = Fstat.NONE;
+                System.out.println("Positive Fstat decreased!");
+                break;
+            case "Achoo!":
+                double chance = (fstat == Fstat.NONE ? 0.2 : 0.4);
+                if(rand.nextDouble() < chance){
+                    gstat = Gstat.SICKLY;
+                    System.out.println("You caught 'sickly'!");
+                }
+                break;
+        }
+    }
+
+    void handleSleepInEvent() {
+        System.out.println("Choices: 1) Short Nap 2) Nap 3) Long Nap");
+        int choice = 1;
+        try {
+            choice = Integer.parseInt(sc.nextLine());
+        } catch(Exception e){}
+
+        switch(choice) {
+            case 1:
+                fatigue = Math.max(0, fatigue-15);
+                System.out.println("Recovered 15 fatigue.");
+                break;
+            case 2:
+                fatigue = Math.max(0, fatigue-30);
+                if(rand.nextDouble() < 0.5 && fstat == Fstat.EXHAUSTED) fstat = Fstat.NONE;
+                System.out.println("Recovered 30 fatigue, possible 'exhausted' removal.");
+                break;
+            case 3:
+                fatigue = 0;
+                if(rand.nextDouble() < 0.25) gstat = Gstat.SLACKER;
+                fstat = Fstat.NONE;
+                System.out.println("Recovered all fatigue, cleared Fstats, chance for 'slacker'.");
+                break;
+        }
+    }
+
+    void triggerTrainingEvent(Activity act) {
+        // Extra Training
+        if(rand.nextDouble() < 0.2){
+            System.out.println("Event: Extra Training! 1) +5 stats & +5 fatigue 2) -5 fatigue");
+            int choice = 1;
+            try {
+                choice = Integer.parseInt(sc.nextLine());
+            } catch(Exception e){}
+
+            if(choice == 1){
+                applyStatGain(act.name().toLowerCase(), 5);
+                fatigue += 5;
+                System.out.println("+5 stats, +5 fatigue.");
+            } else {
+                fatigue = Math.max(0, fatigue-5);
+                System.out.println("-5 fatigue.");
+            }
+        }
+
+        // Pressure and Working Harder! can be implemented here as needed
+    }
+
+    void applyStatGain(String statName, int amt){
+        switch(statName){
+            case "study": study += amt; break;
+            case "social": social += amt; break;
+            case "activity": activity += amt; break;
+            case "research": research += amt; break;
+            case "character": character += amt; break;
+        }
+    }
+
+    void healSystem(){
+        fatigue = Math.max(0,fatigue-20);
+        if(fstat==Fstat.ON_THE_BRINK){
+            double r=rand.nextDouble();
+            if(r<0.25) fstat=Fstat.MENTALLY_OVERWORKED;
+            else if(r<0.5) fstat=Fstat.EXHAUSTED;
+            else fstat=Fstat.NONE;
+        } else if(fstat==Fstat.MENTALLY_OVERWORKED) fstat=Fstat.EXHAUSTED;
+        else fstat=Fstat.NONE;
+
+        System.out.println("Heal applied! Fatigue recovered 20 and Fstat adjusted to "+fstat);
+    }
+
+    void extraTest(Activity act, boolean isRequiredTest, double mult, double factor){
+        fatigue += 15;
+        System.out.println("Extra test conducted, fatigue +15.");
+    }
+
+    void capStats(){
+        study=Math.min(200,study); social=Math.min(200,social); activity=Math.min(200,activity);
+        research=Math.min(200,research); character=Math.min(200,character); mood=Math.min(100,mood);
+    }
+
+    void printStats(){
+        System.out.println("Stats | Study:"+study+" Social:"+social+" Activity:"+activity+
+                " Research:"+research+" Character:"+character+" Mood:"+moodLevel()+
+                " Fatigue:"+fatigue+" SP:"+skillPoints+" Fstat:"+fstat+" Gstat:"+gstat+" Rstat:"+rstat);
+    }
+
+    boolean passCheck(double difficultyMultiplier){
+        double baseThreshold = 120 * difficultyMultiplier;
+
+        // Major adjustments
+        double studyReq=0, socialReq=0, activityReq=0, researchReq=0, characterReq=0;
+        switch(major){
+            case ENGINEERING: studyReq+=0.2; researchReq+=0.1; break;
+            case ENGLISH: socialReq+=0.2; characterReq+=0.1; break;
+            case BUSINESS: socialReq+=0.1; characterReq+=0.1; activityReq+=0.1; break;
+            case ATHLETICS: activityReq+=0.3; break;
+            case MEDICAL: studyReq+=0.2; researchReq+=0.1; break;
+            case LAW: socialReq+=0.1; studyReq+=0.1; characterReq+=0.1; break;
+            case PSYCHOLOGY: socialReq+=0.05; characterReq+=0.25; break;
+            case EDUCATION: studyReq+=0.05; socialReq+=0.05; activityReq+=0.05; researchReq+=0.05; characterReq+=0.1; break;
+        }
+
+        double total = study*(1+studyReq)+social*(1+socialReq)+activity*(1+activityReq)+research*(1+researchReq)+character*(1+characterReq);
+        return total>=baseThreshold;
+    }
+}
+
+    static Activity chooseActivity(){
+        System.out.println("\nChoose activity for this week:");
+        System.out.println("1) Study");
+        System.out.println("2) Social Life");
+        System.out.println("3) Activity/Clubs");
+        System.out.println("4) Research");
+        System.out.println("5) Character Development");
+        System.out.println("6) Recreation (rest)");
+        System.out.println("7) Extra Test");
+        System.out.println("8) Rest");
+        System.out.println("9) Heal");
+        int choice=0;
+        while(true){
+            try{
+                System.out.print("Enter 1-9: ");
+                choice=Integer.parseInt(sc.nextLine());
+                if(choice>=1 && choice<=9) break;
+            }catch(Exception e){}
+            System.out.println("Invalid input. Try again.");
+        }
+        return Activity.values()[choice-1];
+    }
+
+    static Major chooseMajor(){
+        System.out.println("Choose your major:");
+        for(int i=0;i<Major.values().length;i++){
+            System.out.println((i+1)+") "+Major.values()[i]);
+        }
+        int choice=0;
+        while(true){
+            try{
+                System.out.print("Enter 1-"+Major.values().length+": ");
+                choice=Integer.parseInt(sc.nextLine());
+                if(choice>=1 && choice<=Major.values().length) break;
+            }catch(Exception e){}
+            System.out.println("Invalid input. Try again.");
+        }
+        return Major.values()[choice-1];
+    }
+
+    public static void main(String[] args){
+        System.out.print("Enter your student name: ");
+        String name = sc.nextLine();
+
+        Major major = chooseMajor();
+
+        Student player = new Student(name, major);
+
+        System.out.println("Enter growth efficiencies (%) for Study Social Activity Research Character (total ≤30):");
+        double[] eff = new double[5];
+        while(true){
+            try{
+                String[] parts = sc.nextLine().split(" ");
+                if(parts.length!=5) throw new Exception();
+                double sum=0;
+                for(int i=0;i<5;i++){
+                    eff[i]=Double.parseDouble(parts[i]);
+                    sum+=eff[i];
+                }
+                if(sum>30) throw new Exception();
+                break;
+            }catch(Exception e){
+                System.out.println("Invalid input, try again.");
+            }
+        }
+        player.effStudy=1.0+eff[0]/100.0; player.effSocial=1.0+eff[1]/100.0;
+        player.effActivity=1.0+eff[2]/100.0; player.effResearch=1.0+eff[3]/100.0;
+        player.effCharacter=1.0+eff[4]/100.0;
+
+        System.out.println("Choose college difficulty for midterms/finals (1-Easy,2-Normal,3-Hard):");
+        int difficulty=1;
+        double difficultyMultiplier=1.0;
+        while(true){
+            try{
+                difficulty=Integer.parseInt(sc.nextLine());
+                if(difficulty>=1 && difficulty<=3) break;
+            }catch(Exception e){}
+            System.out.println("Invalid input. Try again.");
+        }
+        difficultyMultiplier = 1 + (difficulty-1)*0.1;
+
+        for(int week=1;week<=24;week++){
+            System.out.println("\n=== Week "+week+" ===");
+            Activity act = chooseActivity();
+            boolean requiredTest = (week==12 || week==24);
+            player.train(act, requiredTest, difficultyMultiplier);
+
+            if(requiredTest){
+                boolean passed = player.passCheck(difficultyMultiplier);
+                if(passed){
+                    System.out.println("You passed the "+(week==12?"Midterm!":"Final!")+" Reward: +5 all stats, +5 mood.");
+                    player.study+=5; player.social+=5; player.activity+=5;
+                    player.research+=5; player.character+=5;
+                    player.mood=Math.min(100,player.mood+5);
+                } else{
+                    System.out.println("You failed the "+(week==12?"Midterm.":"Final."));
+                }
+            }
+
+            player.printStats();
+        }
+
+        System.out.println("\nSemester Complete! Final Stats:");
+        player.printStats();
+    }
+    
+}
