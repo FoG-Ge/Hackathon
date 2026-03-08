@@ -1,0 +1,278 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.awt.geom.*;
+
+/**
+ * Graphical UI for the High School Life Simulator.
+ * Start screen -> Game screen with stats bar, fatigue bar, water droplet, weekly choice dialog.
+ */
+public class HighSchoolGameGUI extends JFrame {
+
+    private CardLayout cards;
+    private JPanel mainPanel;
+    private GamePanel gamePanel;
+    private Main.Student player;
+    private int week = 1;
+    private static final int TOTAL_WEEKS = 24;
+    private double difficultyMultiplier = 1.0;
+
+    public HighSchoolGameGUI() {
+        setTitle("High School Life Simulator");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(700, 600);
+        setLocationRelativeTo(null);
+        cards = new CardLayout();
+        mainPanel = new JPanel(cards);
+
+        // Start screen
+        JPanel startPanel = new StartPanel();
+        mainPanel.add(startPanel, "start");
+
+        // Game screen (will add player and week when game starts)
+        gamePanel = new GamePanel(null);
+        mainPanel.add(gamePanel, "game");
+
+        add(mainPanel);
+    }
+
+    private void startGame() {
+        String name = JOptionPane.showInputDialog(this, "Enter your name:", "Student Name", JOptionPane.QUESTION_MESSAGE);
+        if (name == null || name.trim().isEmpty()) name = "Student";
+
+        Main.Major major = chooseMajorDialog();
+        if (major == null) return;
+
+        Main.guiInputProvider = prompt -> {
+            String result = JOptionPane.showInputDialog(HighSchoolGameGUI.this, prompt, "Choice", JOptionPane.QUESTION_MESSAGE);
+            return result != null ? result : "1";
+        };
+        player = new Main.Student(name.trim(), major);
+        player.effStudy = 1.05;
+        player.effSocial = 1.05;
+        player.effActivity = 1.05;
+        player.effResearch = 1.05;
+        player.effCharacter = 1.05;
+
+        String diffStr = JOptionPane.showInputDialog(this, "Difficulty (1=Easy, 2=Normal, 3=Hard):", "2");
+        try {
+            int d = Integer.parseInt(diffStr != null ? diffStr : "2");
+            if (d >= 1 && d <= 3) difficultyMultiplier = 1 + (d - 1) * 0.1;
+        } catch (Exception e) { }
+
+        week = 1;
+        gamePanel.setPlayer(player);
+        gamePanel.setWeek(week);
+        gamePanel.buildChoiceButtons(this::onActivityChosen);
+        cards.show(mainPanel, "game");
+        gamePanel.repaint();
+    }
+
+    private void onActivityChosen(int activityIndex) {
+        if (player == null || week > TOTAL_WEEKS) return;
+        Main.Activity act = Main.Activity.values()[activityIndex];
+        boolean requiredTest = (week == 12 || week == 24);
+        player.train(act, requiredTest, difficultyMultiplier);
+        if (requiredTest) {
+            boolean passed = player.passCheck(difficultyMultiplier);
+            if (passed) {
+                player.study += 5; player.social += 5; player.activity += 5;
+                player.research += 5; player.character += 5;
+                player.mood = Math.min(100, player.mood + 5);
+                JOptionPane.showMessageDialog(this, "You passed the " + (week == 12 ? "Midterm!" : "Final!") + " +5 all stats, +5 mood.");
+            } else {
+                JOptionPane.showMessageDialog(this, "You failed the " + (week == 12 ? "Midterm." : "Final."));
+            }
+        }
+        week++;
+        gamePanel.setWeek(week);
+        gamePanel.repaint();
+        if (week <= TOTAL_WEEKS) {
+            gamePanel.buildChoiceButtons(this::onActivityChosen);
+        } else {
+            endGame();
+        }
+    }
+
+    private Main.Major chooseMajorDialog() {
+        Main.Major[] majors = Main.Major.values();
+        String[] names = new String[majors.length];
+        for (int i = 0; i < majors.length; i++) names[i] = (i + 1) + ") " + majors[i].name();
+        String choice = (String) JOptionPane.showInputDialog(this, "Choose your major:", "Major",
+            JOptionPane.QUESTION_MESSAGE, null, names, names[0]);
+        if (choice == null) return null;
+        int paren = choice.indexOf(')');
+        String num = paren > 0 ? choice.substring(0, paren).trim() : choice.trim();
+        int idx = Integer.parseInt(num) - 1;
+        if (idx < 0 || idx >= majors.length) idx = 0;
+        return majors[idx];
+    }
+
+    private void endGame() {
+        if (player != null) {
+            JOptionPane.showMessageDialog(this,
+                "Semester Complete!\nStudy: " + player.study + " Social: " + player.social +
+                " Activity: " + player.activity + " Research: " + player.research + " Character: " + player.character +
+                "\nMood: " + player.moodLevel() + " Fatigue: " + player.fatigue);
+        }
+    }
+
+    // ----- Start screen panel -----
+    class StartPanel extends JPanel implements MouseListener {
+        StartPanel() {
+            setBackground(new Color(220, 240, 255));
+            setLayout(new BorderLayout());
+            JLabel title = new JLabel("<html><center>Simulate your high school life</center></html>", SwingConstants.CENTER);
+            title.setFont(new Font("SansSerif", Font.BOLD, 28));
+            title.setForeground(new Color(40, 60, 100));
+            add(title, BorderLayout.CENTER);
+            JLabel hint = new JLabel("Click anywhere to start", SwingConstants.CENTER);
+            hint.setFont(new Font("SansSerif", Font.PLAIN, 14));
+            hint.setForeground(new Color(80, 100, 140));
+            add(hint, BorderLayout.SOUTH);
+            addMouseListener(this);
+            title.addMouseListener(this);
+            hint.addMouseListener(this);
+        }
+        @Override
+        public void mouseClicked(MouseEvent e) { startGame(); }
+        @Override
+        public void mousePressed(MouseEvent e) {}
+        @Override
+        public void mouseReleased(MouseEvent e) {}
+        @Override
+        public void mouseEntered(MouseEvent e) {}
+        @Override
+        public void mouseExited(MouseEvent e) {}
+    }
+
+    // ----- Game panel: top stats bar, fatigue bar, choice area between bar and droplet, water droplet -----
+    class GamePanel extends JPanel {
+        private Main.Student p;
+        private JPanel choiceArea;
+        private JPanel dropletArea;
+        private JLabel weekLabel;
+
+        GamePanel(Main.Student player) {
+            p = player;
+            setBackground(new Color(240, 248, 255));
+            setLayout(new BorderLayout(0, 12));
+
+            JPanel topPanel = new JPanel(new BorderLayout(0, 8));
+            topPanel.setBackground(new Color(240, 248, 255));
+            topPanel.setBorder(BorderFactory.createEmptyBorder(12, 12, 8, 12));
+            // Stats + fatigue drawn in paintComponent; we use a single panel that paints both
+            JPanel barPanel = new JPanel() {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
+                    if (p == null) return;
+                    Graphics2D g2 = (Graphics2D) g;
+                    int w = getWidth();
+                    int barY = 4;
+                    int barH = 20;
+                    int barW = w - 72;
+                    int barX = 8;
+                    g2.setColor(new Color(200, 200, 210));
+                    g2.fillRoundRect(barX, barY, barW, barH, 6, 6);
+                    double fatiguePct = Math.min(100, p.fatigue) / 100.0;
+                    Color fc = fatiguePct > 0.7 ? new Color(180, 60, 60) : fatiguePct > 0.4 ? new Color(200, 140, 60) : new Color(80, 160, 120);
+                    g2.setColor(fc);
+                    g2.fillRoundRect(barX, barY, (int) (barW * fatiguePct), barH, 6, 6);
+                    g2.setColor(Color.DARK_GRAY);
+                    g2.drawRoundRect(barX, barY, barW, barH, 6, 6);
+                    g2.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                    g2.drawString("Fatigue: " + p.fatigue, barX + barW + 6, barY + barH - 5);
+                    int boxY = barY + barH + 12;
+                    int boxH = 40;
+                    String[] labels = { "Study", "Social", "Activity", "Research", "Character" };
+                    int[] values = { p.study, p.social, p.activity, p.research, p.character };
+                    int boxW = (w - 48) / 5;
+                    int gap = 6;
+                    for (int i = 0; i < 5; i++) {
+                        int x = 24 + i * (boxW + gap);
+                        g2.setColor(Color.WHITE);
+                        g2.fillRoundRect(x, boxY, boxW, boxH, 8, 8);
+                        g2.setColor(new Color(70, 90, 130));
+                        g2.drawRoundRect(x, boxY, boxW, boxH, 8, 8);
+                        g2.setFont(new Font("SansSerif", Font.BOLD, 10));
+                        g2.drawString(labels[i], x + 4, boxY + 14);
+                        g2.setFont(new Font("SansSerif", Font.PLAIN, 13));
+                        g2.drawString(String.valueOf(values[i]), x + 4, boxY + 30);
+                    }
+                }
+            };
+            barPanel.setPreferredSize(new Dimension(700, 82));
+            barPanel.setBackground(new Color(240, 248, 255));
+            topPanel.add(barPanel, BorderLayout.NORTH);
+
+            choiceArea = new JPanel(new GridLayout(0, 3, 8, 8));
+            choiceArea.setBackground(new Color(240, 248, 255));
+            choiceArea.setBorder(BorderFactory.createTitledBorder("Week — Choose your activity"));
+            topPanel.add(choiceArea, BorderLayout.CENTER);
+            add(topPanel, BorderLayout.NORTH);
+
+            dropletArea = new JPanel() {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
+                    Graphics2D g2 = (Graphics2D) g;
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    int w = getWidth();
+                    int h = getHeight();
+                    int cx = w / 2;
+                    int cy = h / 2;
+                    int dropW = 80;
+                    int dropH = 100;
+                    Path2D droplet = new Path2D.Double();
+                    droplet.moveTo(cx, cy - dropH / 2);
+                    droplet.quadTo(cx + dropW / 2, cy - dropH / 4, cx + dropW / 4, cy);
+                    droplet.quadTo(cx, cy + dropH / 3, cx - dropW / 4, cy);
+                    droplet.quadTo(cx - dropW / 2, cy - dropH / 4, cx, cy - dropH / 2);
+                    droplet.closePath();
+                    g2.setColor(new Color(180, 220, 255));
+                    g2.fill(droplet);
+                    g2.setColor(new Color(100, 160, 220));
+                    g2.draw(droplet);
+                }
+            };
+            dropletArea.setBackground(new Color(240, 248, 255));
+            add(dropletArea, BorderLayout.CENTER);
+
+            weekLabel = new JLabel("Week 1 / " + TOTAL_WEEKS, SwingConstants.CENTER);
+            weekLabel.setFont(new Font("SansSerif", Font.PLAIN, 14));
+            add(weekLabel, BorderLayout.SOUTH);
+        }
+
+        void setPlayer(Main.Student player) { p = player; }
+
+        void setWeek(int w) {
+            weekLabel.setText("Week " + w + " / " + TOTAL_WEEKS);
+            choiceArea.setBorder(BorderFactory.createTitledBorder("Week " + w + " — Choose your activity"));
+        }
+
+        void buildChoiceButtons(java.util.function.IntConsumer onChoice) {
+            choiceArea.removeAll();
+            String[] options = {
+                "Study", "Social", "Activity", "Research", "Character",
+                "Recreation", "Extra Test", "Rest", "Heal"
+            };
+            for (int i = 0; i < options.length; i++) {
+                final int idx = i;
+                JButton b = new JButton(options[i]);
+                b.addActionListener(e -> onChoice.accept(idx));
+                choiceArea.add(b);
+            }
+            choiceArea.revalidate();
+            choiceArea.repaint();
+        }
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            HighSchoolGameGUI gui = new HighSchoolGameGUI();
+            gui.setVisible(true);
+        });
+    }
+}
+
